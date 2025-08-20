@@ -1,0 +1,103 @@
+{% load static %}
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Inventory Dashboard</title>
+  <link href="{% static 'css/tailwind.css' %}" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+  <div class="container mx-auto py-8 px-4">
+    <h1 class="text-3xl md:text-4xl font-bold mb-6 text-center md:text-left">Inventory & Sales Dashboard</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Sales Chart -->
+      <div class="bg-white p-6 rounded shadow">
+        <h2 class="font-semibold mb-4 text-lg md:text-xl">Sales (Last 10 orders)</h2>
+        <div class="h-64 md:h-80 lg:h-96">
+          <canvas id="salesChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Top Products Chart -->
+      <div class="bg-white p-6 rounded shadow">
+        <h2 class="font-semibold mb-4 text-lg md:text-xl">Top Products by Qty (Real-time)</h2>
+        <div class="h-64 md:h-80 lg:h-96">
+          <canvas id="productChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div id="events" class="mt-6"></div>
+  </div>
+
+<script>
+const salesCtx = document.getElementById('salesChart').getContext('2d');
+const productCtx = document.getElementById('productChart').getContext('2d');
+
+let salesChart = new Chart(salesCtx, {
+  type: 'line',
+  data: { labels: [], datasets: [{ label: 'Order Totals', data: [] }] },
+  options: { responsive: true, maintainAspectRatio: false }
+});
+
+let productChart = new Chart(productCtx, {
+  type: 'bar',
+  data: { labels: [], datasets: [{ label: 'Quantity Sold', data: [] }] },
+  options: { responsive: true, maintainAspectRatio: false }
+});
+
+// Fetch initial data
+async function fetchInitialData(){
+  const ordersRes = await fetch('/api/orders/?ordering=-created_at&limit=10');
+  const orders = await ordersRes.json();
+  const labels = orders.map(o => new Date(o.created_at).toLocaleString()).reverse();
+  const totals = orders.map(o => parseFloat(o.total)).reverse();
+  salesChart.data.labels = labels;
+  salesChart.data.datasets[0].data = totals;
+  salesChart.update();
+
+  const topRes = await fetch('/api/top-products/');
+  const top = await topRes.json();
+  productChart.data.labels = top.map(p => p.name);
+  productChart.data.datasets[0].data = top.map(p => p.qty);
+  productChart.update();
+}
+fetchInitialData();
+
+// WebSocket connection
+const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+const ws = new WebSocket(`${proto}://${location.host}/ws/updates/`);
+ws.onmessage = function(e) {
+  const payload = JSON.parse(e.data);
+  if (payload.event === 'order_created') {
+    const order = payload.order;
+    const label = new Date(order.created_at).toLocaleString();
+
+    // Update sales chart
+    salesChart.data.labels.push(label);
+    salesChart.data.datasets[0].data.push(parseFloat(order.total));
+    if (salesChart.data.labels.length > 10) {
+      salesChart.data.labels.shift();
+      salesChart.data.datasets[0].data.shift();
+    }
+    salesChart.update();
+
+    // Show event
+    const d = document.getElementById('events');
+    d.innerHTML = `<div class="bg-green-100 p-3 rounded mb-2">New order #${order.id} - total ${order.total}</div>` + d.innerHTML;
+
+    // Refresh top products chart
+    fetch('/api/top-products/').then(res => res.json()).then(top => {
+      productChart.data.labels = top.map(p => p.name);
+      productChart.data.datasets[0].data = top.map(p => p.qty);
+      productChart.update();
+    });
+  }
+};
+</script>
+</body>
+</html>
