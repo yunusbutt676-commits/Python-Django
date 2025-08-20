@@ -23,5 +23,5 @@ Tracks orders, stock levels, and top-selling products.
 ## Installation
 1. Clone the repository:  
    ```bash
-   git clone <repo_url>
+   git clone <(https://github.com/yunusbutt676-commits/Python-Django.git)>
    cd realtime_inventory
